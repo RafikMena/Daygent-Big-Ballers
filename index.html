@@ -7,49 +7,166 @@
   <link rel="stylesheet" href="index.css" />
 </head>
 <body>
-  <div class="chat-container">
-    <div class="chat-header">💹 Your favorite TradeBot Assistant</div>
-    <div id="chat-log" class="chat-log">
-      <div class="message bot">Welcome! Ask me anything about the markets 📈</div>
-    </div>
-    <div class="chat-input-wrapper">
-      <input type="text" id="user-input" placeholder="Type your message..." />
-      <button id="send-btn">➤</button>
-    </div>
+  <div class="app-container">
+    <aside class="sidebar">
+      <h1>🧠 Daygent</h1>
+      <button id="new-chat-btn">+ New Chat</button>
+      <div id="history-list" class="history-list"></div>
+    </aside>
+
+    <main class="chat-main">
+      <header class="chat-header" id="chat-title">New Chat</header>
+      <div id="chat-log" class="chat-log"></div>
+      <div class="chat-input-wrapper">
+        <input type="text" id="user-input" placeholder="Type a message..." autocomplete="off" />
+        <button id="send-btn">➤</button>
+      </div>
+    </main>
   </div>
 
   <script>
+    const STORAGE_KEY = "daygent-sessions";
+    let sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    let currentSession = null;
+
+    const log = document.getElementById("chat-log");
     const input = document.getElementById("user-input");
     const btn = document.getElementById("send-btn");
-    const log = document.getElementById("chat-log");
+    const historyList = document.getElementById("history-list");
+    const chatTitle = document.getElementById("chat-title");
+    const newChatBtn = document.getElementById("new-chat-btn");
+
+    function saveSessions() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    }
+
+    function renderHistoryList() {
+      historyList.innerHTML = "";
+      sessions.forEach(session => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+
+        const titleSpan = document.createElement("span");
+        titleSpan.textContent = session.title || "Untitled Chat";
+        titleSpan.className = "title";
+        titleSpan.onclick = () => loadSession(session.id);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "🗑️";
+        deleteBtn.className = "delete-btn";
+        deleteBtn.onclick = (e) => {
+          e.stopPropagation();
+          deleteSession(session.id);
+        };
+
+        div.appendChild(titleSpan);
+        div.appendChild(deleteBtn);
+        historyList.appendChild(div);
+      });
+    }
+
+    function deleteSession(id) {
+      sessions = sessions.filter(s => s.id !== id);
+      saveSessions();
+      renderHistoryList();
+
+      if (currentSession?.id === id) {
+        if (sessions.length > 0) {
+          loadSession(sessions[sessions.length - 1].id);
+        } else {
+          createNewSession();
+        }
+      }
+    }
+
+
+    function renderChat(messages) {
+      log.innerHTML = "";
+      messages.forEach(({ role, content }) => appendMessage(role, content));
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function appendMessage(role, content) {
+      const msg = document.createElement("div");
+      msg.className = `message ${role}`;
+      msg.innerHTML = `<div class="message-content">${content}</div>`;
+      log.appendChild(msg);
+    }
+
+    function createNewSession() {
+      const id = Date.now().toString();
+      const starterMessage = "👋 Hi there! Ask me anything about the markets.";
+      const session = {
+        id,
+        title: "New Chat",
+        messages: [{ role: "bot", content: starterMessage }]
+      };
+      sessions.push(session);
+      currentSession = session;
+      saveSessions();
+      renderHistoryList();
+      renderChat(session.messages);
+      chatTitle.textContent = session.title;
+    }
+
+
+    function loadSession(id) {
+      const session = sessions.find(s => s.id === id);
+      if (!session) return;
+      currentSession = session;
+      chatTitle.textContent = session.title;
+      renderChat(session.messages);
+    }
+
+    function sendMessage(text) {
+      if (!currentSession) return;
+
+      appendMessage("user", text);
+      currentSession.messages.push({ role: "user", content: text });
+
+      if (currentSession.title === "New Chat") {
+        currentSession.title = text.slice(0, 30) + (text.length > 30 ? "..." : "");
+        chatTitle.textContent = currentSession.title;
+        renderHistoryList(); 
+      }
+
+      const botReply = `Echo: ${text}`;
+      const botMsg = document.createElement("div");
+      botMsg.className = "message bot";
+      botMsg.innerHTML = `<div class="message-content">Thinking...</div>`;
+      log.appendChild(botMsg);
+      log.scrollTop = log.scrollHeight;
+
+      setTimeout(() => {
+        botMsg.querySelector(".message-content").textContent = botReply;
+        currentSession.messages.push({ role: "bot", content: botReply });
+        saveSessions();
+        log.scrollTop = log.scrollHeight;
+      }, 600);
+
+      saveSessions();
+    }
+
 
     btn.onclick = () => {
       const text = input.value.trim();
       if (!text) return;
-
-      const userMsg = document.createElement("div");
-      userMsg.className = "message user";
-      userMsg.textContent = text;
-      log.appendChild(userMsg);
-
-      const botMsg = document.createElement("div");
-      botMsg.className = "message bot";
-      botMsg.textContent = "Thinking..."; 
-      log.appendChild(botMsg);
-
+      sendMessage(text);
       input.value = "";
-      log.scrollTop = log.scrollHeight;
-
-      // Simulated response
-      setTimeout(() => {
-        botMsg.textContent = `Echo: ${text}`;
-        log.scrollTop = log.scrollHeight;
-      }, 700);
     };
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") btn.click();
     });
+
+    newChatBtn.onclick = () => createNewSession();
+
+    if (sessions.length === 0) {
+      createNewSession();
+    } else {
+      loadSession(sessions[sessions.length - 1].id);
+    }
+    renderHistoryList();
   </script>
 </body>
 </html>

@@ -99,7 +99,7 @@
       const session = {
         id,
         title: "New Chat",
-        messages: [{ role: "bot", content: starterMessage }]
+        messages: [{ role: "assistant", content: starterMessage }]
       };
       sessions.push(session);
       currentSession = session;
@@ -118,34 +118,59 @@
       renderChat(session.messages);
     }
 
-    function sendMessage(text) {
-      if (!currentSession) return;
+    async function sendMessage(text) {
+  if (!currentSession) return;
 
-      appendMessage("user", text);
-      currentSession.messages.push({ role: "user", content: text });
+  appendMessage("user", text);
+  currentSession.messages.push({ role: "user", content: text });
 
-      if (currentSession.title === "New Chat") {
-        currentSession.title = text.slice(0, 30) + (text.length > 30 ? "..." : "");
-        chatTitle.textContent = currentSession.title;
-        renderHistoryList(); 
-      }
+  if (currentSession.title === "New Chat") {
+    currentSession.title = text.slice(0, 30) + (text.length > 30 ? "..." : "");
+    chatTitle.textContent = currentSession.title;
+    renderHistoryList();
+  }
 
-      const botReply = `Echo: ${text}`;
-      const botMsg = document.createElement("div");
-      botMsg.className = "message bot";
-      botMsg.innerHTML = `<div class="message-content">Thinking...</div>`;
-      log.appendChild(botMsg);
-      log.scrollTop = log.scrollHeight;
+  const botMsg = document.createElement("div");
+  botMsg.className = "message assistant";
+  botMsg.innerHTML = `<div class="message-content">Thinking...</div>`;
+  log.appendChild(botMsg);
+  log.scrollTop = log.scrollHeight;
 
-      setTimeout(() => {
-        botMsg.querySelector(".message-content").textContent = botReply;
-        currentSession.messages.push({ role: "bot", content: botReply });
-        saveSessions();
-        log.scrollTop = log.scrollHeight;
-      }, 600);
+  try {
+    const res = await fetch("http://127.0.0.1:1234/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "local-model",
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: text }
+  ],
+  temperature: 0.7
+      })
+    });
 
-      saveSessions();
+    const data = await res.json();
+
+    if (!res.ok || !data.choices) {
+      console.error("LM Studio API error:", data);
+      botMsg.querySelector(".message-content").textContent = "Error: " + (data.error?.message || "Unknown response.");
+      return;
     }
+
+    const botReply = data.choices[0].message.content;
+    botMsg.querySelector(".message-content").textContent = botReply;
+    currentSession.messages.push({ role: "assistant", content: botReply });
+    saveSessions();
+    log.scrollTop = log.scrollHeight;
+  } catch (err) {
+    botMsg.querySelector(".message-content").textContent = "Network error.";
+    console.error("Fetch error:", err);
+  }
+}
+
 
 
     btn.onclick = () => {

@@ -20,6 +20,7 @@
       <div class="chat-input-wrapper">
         <input type="text" id="user-input" placeholder="Type a message..." autocomplete="off" />
         <button id="send-btn">➤</button>
+        <button id="mic-btn">🎤</button>
       </div>
     </main>
   </div>
@@ -161,6 +162,46 @@ Rules
 
   /* ---------- 7. Boot ------------------------------------------------ */
   sessions.length ? loadSession(sessions.at(-1).id) : newSession(); renderHistory();
+
+  const micBtn = document.getElementById("mic-btn");
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  micBtn.onclick = () => {
+    recognition.start();
+    micBtn.disabled = true;
+    micBtn.textContent = "🎙️";
+  };
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    input.value = transcript;
+    micBtn.disabled = false;
+    micBtn.textContent = "🎤";
+    // Optional: auto-send the message
+    // btn.click();
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error:", event.error);
+    micBtn.disabled = false;
+    micBtn.textContent = "🎤";
+  };
+
+  recognition.onend = () => {
+    micBtn.disabled = false;
+    micBtn.textContent = "🎤";
+  };
+} else {
+  micBtn.disabled = true;
+  micBtn.title = "Speech recognition not supported";
+}
+
   </script>
 </body>
 </html>

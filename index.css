@@ -182,3 +182,34 @@ body {
 .history-item .delete-btn:hover {
   color: #f87171;
 }
+
+/* Ensure buttons are aligned and visually balanced */
+.chat-input-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: #f4f4f4;
+  border-top: 1px solid #ccc;
+}
+
+/* Shared styles for both mic and send buttons */
+.chat-input-wrapper button {
+  background-color: #4caf50;
+  border: none;
+  color: white;
+  font-size: 18px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-input-wrapper button:hover {
+  background-color: #45a049;
+}
+
+/* Optional: differentiate mic visually when active */
+#mic-btn.recording {
+  background-color: #e53935;
+}

@@ -25,173 +25,142 @@
   </div>
 
   <script>
-    const STORAGE_KEY = "daygent-sessions";
-    let sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    let currentSession = null;
+  /* ---------- 1. Hard-coded SPY closes (unchanged) ------------------- */
+  const spyData = [
+    { date:"2024-05-01", close:422.3 }, { date:"2024-05-02", close:421.8 },
+    { date:"2024-05-03", close:423.0 }, { date:"2024-05-06", close:424.5 },
+    { date:"2024-05-07", close:425.1 }, { date:"2024-05-08", close:424.8 },
+    { date:"2024-05-09", close:426.0 }, { date:"2024-05-10", close:427.3 },
+    { date:"2024-05-13", close:428.2 }, { date:"2024-05-14", close:427.5 },
+    { date:"2024-05-15", close:429.0 }, { date:"2024-05-16", close:430.1 },
+    { date:"2024-05-17", close:431.5 }, { date:"2024-05-20", close:432.0 },
+    { date:"2024-05-21", close:431.7 }, { date:"2024-05-22", close:433.2 },
+    { date:"2024-05-23", close:434.0 }, { date:"2024-05-24", close:435.5 },
+    { date:"2024-05-28", close:436.8 }, { date:"2024-05-29", close:437.2 },
+    { date:"2024-05-30", close:438.0 }, { date:"2024-05-31", close:439.0 }
+  ];
 
-    const log = document.getElementById("chat-log");
-    const input = document.getElementById("user-input");
-    const btn = document.getElementById("send-btn");
-    const historyList = document.getElementById("history-list");
-    const chatTitle = document.getElementById("chat-title");
-    const newChatBtn = document.getElementById("new-chat-btn");
+  /* ---------- 2. Helper: send prices as a JSON blob ------------------ */
+  const makePriceBlob = () =>
+    JSON.stringify({ symbol:"SPY", prices: spyData });
 
-    function saveSessions() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+  /* ---------- 3. System prompt -------------------------------------- */
+  const SYSTEM_PROMPT = `
+You are **Daygent**, a disciplined, data-driven equity-analysis assistant.
+
+Mission
+• Guide non-professional traders with transparent, fact-based insights.  
+• Never fabricate prices or events; rely only on data supplied in the conversation.  
+• When data is missing, answer "Unknown – data unavailable."
+
+Required preparation
+1. Parse any JSON/CSV blob that precedes the user’s question.  
+2. From close prices compute, at minimum, the 20-day Simple Moving Average (SMA-20).  
+3. If an indicator cannot be calculated because the series is too short, set its value to null.
+
+Response format (strict markdown)
+**Summary**: ≤25-word actionable takeaway.  
+**Detail**:  
+- Bullet rationale (price action, macro, earnings, etc.).  
+**Indicators**:  
+| Name | Latest | Bias |  
+| ---- | ------ | ---- |  
+| SMA-20 |  | Bull/Bear |  
+**Risk Flags**:  
+- Bullet list of data gaps, macro risks, upcoming events.  
+**Recommendation**: **BUY** / **HOLD** / **SELL** / **NO ACTION**  
+**Confidence**: 0-100 %
+
+Rules
+• Prefix Summary with “⚠️ Low-confidence:” if Confidence < 60 %.  
+• Admit “I don’t know” when data is insufficient.  
+• Never reveal chain-of-thought.  
+• End every reply with:  
+  *I am an AI language model, not a licensed financial adviser. For educational purposes only.*
+`.trim();
+
+  /* ---------- 4. Storage & UI (original) ----------------------------- */
+  const STORAGE_KEY = "daygent-sessions";
+  let sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+  let currentSession = null;
+
+  const log   = document.getElementById("chat-log");
+  const input = document.getElementById("user-input");
+  const btn   = document.getElementById("send-btn");
+  const list  = document.getElementById("history-list");
+  const title = document.getElementById("chat-title");
+
+  function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions)); }
+  function addMessage(role, content) {
+    const el = document.createElement("div");
+    el.className = `message ${role}`;
+    el.innerHTML = `<div class="message-content">${content}</div>`;
+    log.appendChild(el);
+  }
+  function renderChat(msgs) { log.innerHTML = ""; msgs.forEach(m => addMessage(m.role, m.content)); log.scrollTop = log.scrollHeight; }
+
+  function renderHistory() {
+    list.innerHTML = "";
+    sessions.forEach(s => {
+      const row = document.createElement("div"); row.className = "history-item";
+      const span = document.createElement("span"); span.textContent = s.title || "Untitled Chat"; span.className = "title";
+      span.onclick = () => loadSession(s.id);
+      const del = document.createElement("button"); del.textContent = "🗑️"; del.className = "delete-btn";
+      del.onclick = e => { e.stopPropagation(); deleteSession(s.id); };
+      row.appendChild(span); row.appendChild(del); list.appendChild(row);
+    });
+  }
+
+  function deleteSession(id) {
+    sessions = sessions.filter(s => s.id !== id); save(); renderHistory();
+    if (currentSession?.id === id) sessions.length ? loadSession(sessions.at(-1).id) : newSession();
+  }
+
+  function newSession() {
+    const id = Date.now().toString();
+    const sess = { id, title:"New Chat", messages:[{ role:"assistant", content:"👋 Hi there! Ask me anything about the markets." }] };
+    sessions.push(sess); currentSession = sess; save(); renderHistory(); renderChat(sess.messages); title.textContent = sess.title;
+  }
+  function loadSession(id) { const s = sessions.find(x => x.id === id); if (!s) return; currentSession = s; title.textContent = s.title; renderChat(s.messages); }
+
+  /* ---------- 5. Send to LLM ---------------------------------------- */
+  async function sendMessage(text) {
+    addMessage("user", text);
+    currentSession.messages.push({ role:"user", content:text });
+
+    if (currentSession.title === "New Chat") {
+      currentSession.title = text.slice(0,30) + (text.length>30 ? "…" : "");
+      title.textContent = currentSession.title; renderHistory();
     }
 
-    function renderHistoryList() {
-      historyList.innerHTML = "";
-      sessions.forEach(session => {
-        const div = document.createElement("div");
-        div.className = "history-item";
-
-        const titleSpan = document.createElement("span");
-        titleSpan.textContent = session.title || "Untitled Chat";
-        titleSpan.className = "title";
-        titleSpan.onclick = () => loadSession(session.id);
-
-        const deleteBtn = document.createElement("button");
-        deleteBtn.textContent = "🗑️";
-        deleteBtn.className = "delete-btn";
-        deleteBtn.onclick = (e) => {
-          e.stopPropagation();
-          deleteSession(session.id);
-        };
-
-        div.appendChild(titleSpan);
-        div.appendChild(deleteBtn);
-        historyList.appendChild(div);
+    try {
+      const res = await fetch("http://127.0.0.1:1234/v1/chat/completions", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          model:"local-model",
+          temperature:0.3,
+          messages:[
+            { role:"system", content:SYSTEM_PROMPT },
+            { role:"assistant", content:makePriceBlob() },
+            { role:"user", content:text }
+          ]
+        })
       });
-    }
-
-    function deleteSession(id) {
-      sessions = sessions.filter(s => s.id !== id);
-      saveSessions();
-      renderHistoryList();
-
-      if (currentSession?.id === id) {
-        if (sessions.length > 0) {
-          loadSession(sessions[sessions.length - 1].id);
-        } else {
-          createNewSession();
-        }
-      }
-    }
-
-
-    function renderChat(messages) {
-      log.innerHTML = "";
-      messages.forEach(({ role, content }) => appendMessage(role, content));
-      log.scrollTop = log.scrollHeight;
-    }
-
-    function appendMessage(role, content) {
-      const msg = document.createElement("div");
-      msg.className = `message ${role}`;
-      msg.innerHTML = `<div class="message-content">${content}</div>`;
-      log.appendChild(msg);
-    }
-
-    function createNewSession() {
-      const id = Date.now().toString();
-      const starterMessage = "👋 Hi there! Ask me anything about the markets.";
-      const session = {
-        id,
-        title: "New Chat",
-        messages: [{ role: "assistant", content: starterMessage }]
-      };
-      sessions.push(session);
-      currentSession = session;
-      saveSessions();
-      renderHistoryList();
-      renderChat(session.messages);
-      chatTitle.textContent = session.title;
-    }
-
-
-    function loadSession(id) {
-      const session = sessions.find(s => s.id === id);
-      if (!session) return;
-      currentSession = session;
-      chatTitle.textContent = session.title;
-      renderChat(session.messages);
-    }
-
-    async function sendMessage(text) {
-  if (!currentSession) return;
-
-  appendMessage("user", text);
-  currentSession.messages.push({ role: "user", content: text });
-
-  if (currentSession.title === "New Chat") {
-    currentSession.title = text.slice(0, 30) + (text.length > 30 ? "..." : "");
-    chatTitle.textContent = currentSession.title;
-    renderHistoryList();
+      const data = await res.json();
+      if (!res.ok || !data.choices) { addMessage("assistant","API error"); return; }
+      const reply = data.choices[0].message.content.trim();
+      currentSession.messages.push({ role:"assistant", content:reply }); addMessage("assistant", reply); save();
+    } catch(err) { addMessage("assistant","Network error (is the server running?)"); console.error(err); }
   }
 
-  const botMsg = document.createElement("div");
-  botMsg.className = "message assistant";
-  botMsg.innerHTML = `<div class="message-content">Thinking...</div>`;
-  log.appendChild(botMsg);
-  log.scrollTop = log.scrollHeight;
+  /* ---------- 6. Event wiring --------------------------------------- */
+  btn.onclick = () => { const t = input.value.trim(); if (t) { sendMessage(t); input.value=""; } };
+  input.addEventListener("keydown", e => { if (e.key === "Enter") btn.click(); });
+  document.getElementById("new-chat-btn").onclick = newSession;
 
-  try {
-    const res = await fetch("http://127.0.0.1:1234/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "local-model",
-  messages: [
-    { role: "system", content: "You are a helpful assistant." },
-    { role: "user", content: text }
-  ],
-  temperature: 0.7
-      })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok || !data.choices) {
-      console.error("LM Studio API error:", data);
-      botMsg.querySelector(".message-content").textContent = "Error: " + (data.error?.message || "Unknown response.");
-      return;
-    }
-
-    const botReply = data.choices[0].message.content;
-    botMsg.querySelector(".message-content").textContent = botReply;
-    currentSession.messages.push({ role: "assistant", content: botReply });
-    saveSessions();
-    log.scrollTop = log.scrollHeight;
-  } catch (err) {
-    botMsg.querySelector(".message-content").textContent = "Network error.";
-    console.error("Fetch error:", err);
-  }
-}
-
-
-
-    btn.onclick = () => {
-      const text = input.value.trim();
-      if (!text) return;
-      sendMessage(text);
-      input.value = "";
-    };
-
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") btn.click();
-    });
-
-    newChatBtn.onclick = () => createNewSession();
-
-    if (sessions.length === 0) {
-      createNewSession();
-    } else {
-      loadSession(sessions[sessions.length - 1].id);
-    }
-    renderHistoryList();
+  /* ---------- 7. Boot ------------------------------------------------ */
+  sessions.length ? loadSession(sessions.at(-1).id) : newSession(); renderHistory();
   </script>
 </body>
 </html>

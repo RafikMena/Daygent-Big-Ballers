@@ -19,6 +19,7 @@
       <div id="chat-log" class="chat-log"></div>
       <div class="chat-input-wrapper">
         <input type="text" id="user-input" placeholder="Type a message..." autocomplete="off" />
+        <button id="mic-btn">🎤</button>
         <button id="send-btn">➤</button>
       </div>
     </main>
@@ -161,6 +162,101 @@ Rules
 
   /* ---------- 7. Boot ------------------------------------------------ */
   sessions.length ? loadSession(sessions.at(-1).id) : newSession(); renderHistory();
+  try {
+    const res = await fetch("http://127.0.0.1:1234/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "local-model",
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: text }
+  ],
+  temperature: 0.7
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.choices) {
+      console.error("LM Studio API error:", data);
+      botMsg.querySelector(".message-content").textContent = "Error: " + (data.error?.message || "Unknown response.");
+      return;
+    }
+
+    const botReply = data.choices[0].message.content;
+    botMsg.querySelector(".message-content").textContent = botReply;
+    currentSession.messages.push({ role: "assistant", content: botReply });
+    saveSessions();
+    log.scrollTop = log.scrollHeight;
+  } catch (err) {
+    botMsg.querySelector(".message-content").textContent = "Network error.";
+    console.error("Fetch error:", err);
+  }
+
+
+
+
+    btn.onclick = () => {
+      const text = input.value.trim();
+      if (!text) return;
+      sendMessage(text);
+      input.value = "";
+    };
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") btn.click();
+    });
+
+    newChatBtn.onclick = () => createNewSession();
+
+    if (sessions.length === 0) {
+      createNewSession();
+    } else {
+      loadSession(sessions[sessions.length - 1].id);
+    }
+    renderHistoryList();
+
+
+      // Check for SpeechRecognition compatibility
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micBtn = document.getElementById("mic-btn");
+
+  if (SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    micBtn.onclick = () => {
+      recognition.start();
+      micBtn.disabled = true;
+      micBtn.textContent = "🎙️"; // Active state
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      input.value = transcript;
+      micBtn.disabled = false;
+      micBtn.textContent = "🎤";
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      micBtn.disabled = false;
+      micBtn.textContent = "🎤";
+    };
+
+    recognition.onend = () => {
+      micBtn.disabled = false;
+      micBtn.textContent = "🎤";
+    };
+  } else {
+    micBtn.disabled = true;
+    micBtn.title = "Speech recognition not supported";
+  }
   </script>
 </body>
 </html>
